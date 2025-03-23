@@ -9,3 +9,6 @@ flutter pub get
 
 # Build web app
 flutter build web --release
+
+# Remove the base href line completely
+sed -i '/<base href="\/"/d' build/web/index.html
