@@ -173,10 +173,10 @@ packages:
     dependency: transitive
     description:
       name: dart_webrtc
-      sha256: b34e90bc82f33c1023cf98661369c37bccd648c8a4cf882a875d9f5d8bbef694
+      sha256: e65506edb452148220efab53d8d2f8bb9d827bd8bcd53cf3a3e6df70b27f3d86
       url: "https://pub.dev"
     source: hosted
-    version: "1.5.2+hotfix.1"
+    version: "1.4.10"
   dbus:
     dependency: transitive
     description:
@@ -629,6 +629,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.6"
+  platform_detect:
+    dependency: transitive
+    description:
+      name: platform_detect
+      sha256: "7394dc1d884e652785a37c3ff25c54e503c6d9fa2f35b55d5efc0a133dec122c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.5"
   plugin_platform_interface:
     dependency: transitive
     description:
@@ -653,6 +661,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.0"
+  pub_semver:
+    dependency: transitive
+    description:
+      name: pub_semver
+      sha256: "5bfcf68ca79ef689f8990d1160781b4bad40a3bd5e5218ad4076ddb7f4081585"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.2.0"
   quiver:
     dependency: transitive
     description:
@@ -806,42 +822,42 @@ packages:
     dependency: "direct main"
     description:
       name: stream_video
-      sha256: d7e3d067c1fab9484c3d69ef7364bb62ed595b340ee45440d9affe98c4a80856
+      sha256: cdfe7920bd967ecc4c7700e84701f3c536cbcab405009fa244bcf75d1fb2f088
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.3"
+    version: "0.8.4"
   stream_video_flutter:
     dependency: "direct main"
     description:
       name: stream_video_flutter
-      sha256: f625fea489685bef392b1913782a0b1310e951bfc33250fea136528ed3d8909b
+      sha256: "3fc75daa0958b1e93009f2c019bdf0f33c9a6d3e855e3e856c50ce286a9c0783"
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.3"
+    version: "0.8.4"
   stream_video_push_notification:
     dependency: "direct main"
     description:
       name: stream_video_push_notification
-      sha256: cdce818432a17894b5acb6e62008f3587a1526ac4742b621126b9fbdd92f9cab
+      sha256: c014b881fb9a51388bf7797b46513b0a18cce8766a92a2d1012aa3de2f73da64
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.3"
+    version: "0.8.4"
   stream_video_screen_sharing:
     dependency: "direct main"
     description:
       name: stream_video_screen_sharing
-      sha256: "2236c437099c04a9c0a57170e1ddee5f81d9f566b406eb06a359bce9823127d4"
+      sha256: "2b98cbddd183f0d25ac75dc8d22fe4eff8f694245c93f16c8a087c5991e9f7c5"
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.3"
+    version: "0.8.4"
   stream_webrtc_flutter:
     dependency: transitive
     description:
       name: stream_webrtc_flutter
-      sha256: "30194f9110a0951c2f3fbdfe3ff68a5711e69ead8cd906efcd8a0b515a4d7254"
+      sha256: "02e305ba07a3c2c8200ca6722c5f60fc304ea21c3e15de4f51e67714bd875eb6"
       url: "https://pub.dev"
     source: hosted
-    version: "0.12.9+1"
+    version: "0.12.12+2"
   string_scanner:
     dependency: transitive
     description:
