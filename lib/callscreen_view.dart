@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:stream_video_flutter/stream_video_flutter.dart';
+import 'utils/app_theme.dart';
 
 class CallScreen extends StatefulWidget {
   final Call call;
@@ -17,8 +18,13 @@ class _CallScreenState extends State<CallScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: StreamCallContainer(
-        call: widget.call,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: AppTheme.backgroundGradient,
+        ),
+        child: StreamCallContainer(
+          call: widget.call,
+        ),
       ),
     );
   }

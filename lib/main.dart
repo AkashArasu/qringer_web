@@ -243,8 +243,9 @@ import 'package:flutter/material.dart';
 import 'package:stream_video_flutter/stream_video_flutter.dart';
 import 'dart:math';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'package:http/http.dart' as http;
-import 'package:stream_video_flutter/stream_video_flutter.dart';
+import 'utils/app_theme.dart';
 
 void main() {
   // Set WebRTC logging level to reduce noise
@@ -259,10 +260,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Stream Video Call',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
-      ),
+      theme: AppTheme.theme,
       home: const VideoCallPage(),
     );
   }
@@ -282,14 +280,12 @@ class _VideoCallPageState extends State<VideoCallPage> {
   bool _hasError = false;
   String? _errorMessage;
   late final String _callId;
-  late final String _visitorId;
   String? _calleeId;
 
   @override
   void initState() {
     super.initState();
     _callId = _generateRandomString(10);
-    _visitorId = '$_callId-visitor';
     _extractCalleeIdFromUrl();
     _initializeStreamVideo();
   }
@@ -402,23 +398,31 @@ class _VideoCallPageState extends State<VideoCallPage> {
       try {
         await _call!.getOrCreate(
           memberIds: [_calleeId!], 
-          ringing: true, 
-          video: true,
+          ringing: true,
         );
       } catch (e) {
-        print('@@@@@@@@@Error in getOrCreate: $e');
+        developer.log('Error in getOrCreate', error: e, name: 'video_call');
         // If this fails, we'll try to join anyway
       }
 
       try {
         await _call!.join();
 
+        // IMPORTANT: Enable camera for visitor so they can be seen by the callee
+        // The callee controls their own camera state independently
+        try {
+          await _call!.setCameraEnabled(enabled: true);
+          developer.log('Camera enabled for visitor', name: 'video_call');
+        } catch (e) {
+          developer.log('Error enabling camera', error: e, name: 'video_call');
+        }
+
         setState(() {
           _isLoading = false;
         });
         
       } catch (e) {
-        print('@@@@@@@Error joining call: $e');
+        developer.log('Error joining call', error: e, name: 'video_call');
         throw Exception('Failed to join call: $e');
       }
     } catch (e) {
@@ -429,7 +433,7 @@ class _VideoCallPageState extends State<VideoCallPage> {
         _errorMessage = 'Failed to start call: $e';
       });
       
-      print('@@@@@@@@@Error starting call: $e');
+      developer.log('Error starting call', error: e, name: 'video_call');
       debugPrint('Error starting call: $e');
     }
   }
@@ -471,7 +475,12 @@ class _VideoCallPageState extends State<VideoCallPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _buildBody(),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: AppTheme.backgroundGradient,
+        ),
+        child: _buildBody(),
+      ),
     );
   }
 
@@ -488,8 +497,29 @@ class _VideoCallPageState extends State<VideoCallPage> {
       return _buildCallView();
     }
     
-    return const Center(
-      child: Text('Call ended'),
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.call_end,
+            size: 64,
+            color: Colors.white.withValues(alpha: 0.7),
+          ),
+          const SizedBox(height: 16),
+          ShaderMask(
+            shaderCallback: (bounds) => AppTheme.titleGradient.createShader(bounds),
+            child: const Text(
+              'Call ended',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -502,23 +532,43 @@ class _VideoCallPageState extends State<VideoCallPage> {
           children: [
             const Icon(Icons.error_outline, color: Colors.red, size: 48),
             const SizedBox(height: 16),
-            Text(
-              'Error',
-              style: Theme.of(context).textTheme.headlineSmall,
+            ShaderMask(
+              shaderCallback: (bounds) => AppTheme.titleGradient.createShader(bounds),
+              child: Text(
+                'Connection Error',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             const SizedBox(height: 8),
-            Text(_errorMessage ?? 'An unknown error occurred'),
+            Text(
+              _errorMessage ?? 'An unknown error occurred',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70),
+            ),
             const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _hasError = false;
-                  _isLoading = true;
-                  _errorMessage = null;
-                });
-                _initializeStreamVideo();
-              },
-              child: const Text('Retry'),
+            Container(
+              decoration: BoxDecoration(
+                gradient: AppTheme.accentGradient(),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _hasError = false;
+                    _isLoading = true;
+                    _errorMessage = null;
+                  });
+                  _initializeStreamVideo();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                ),
+                child: const Text('Retry'),
+              ),
             ),
           ],
         ),
@@ -527,13 +577,41 @@ class _VideoCallPageState extends State<VideoCallPage> {
   }
 
   Widget _buildLoadingView() {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          Text('Connecting to call...'),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: AppTheme.accentGradient(alpha: 0.3),
+            ),
+            child: const CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              strokeWidth: 3,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ShaderMask(
+            shaderCallback: (bounds) => AppTheme.titleGradient.createShader(bounds),
+            child: const Text(
+              'Connecting to call...',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Please wait while we establish the connection',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.7),
+              fontSize: 14,
+            ),
+          ),
         ],
       ),
     );
@@ -548,18 +626,14 @@ class _VideoCallPageState extends State<VideoCallPage> {
             try {
               return StreamCallContainer(
                 call: _call!,
-                callConnectOptions: CallConnectOptions(
-                  camera: TrackOption.enabled(),
-                  screenShare: TrackOption.disabled(),
-                  microphone: TrackOption.enabled(),
-                ),
-                callContentBuilder: (context, call, callState) {
+                // Removed CallConnectOptions as they don't work properly in SDK 0.10.2
+                // Camera and microphone are now controlled via call.camera.disable()/enable() methods
+                callContentWidgetBuilder: (context, call) {
                   return StreamCallContent(
                     call: call,
-                    callState: callState,
-                    layoutMode: ParticipantLayoutMode.spotlight,
+                    layoutMode: ParticipantLayoutMode.grid,
                     // Empty call controls builder to hide all default controls
-                    callControlsBuilder: (context, call, callState) {
+                    callControlsWidgetBuilder: (context, call) {
                       return const SizedBox.shrink();
                     },
                   );

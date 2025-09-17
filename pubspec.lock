@@ -117,10 +117,10 @@ packages:
     dependency: transitive
     description:
       name: connectivity_plus
-      sha256: "876849631b0c7dc20f8b471a2a03142841b482438e3b707955464f5ffca3e4c3"
+      sha256: b5e72753cf63becce2c61fd04dfe0f1c430cc5278b53a1342dc5ad839eab29ec
       url: "https://pub.dev"
     source: hosted
-    version: "6.1.0"
+    version: "6.1.5"
   connectivity_plus_platform_interface:
     dependency: transitive
     description:
@@ -173,10 +173,10 @@ packages:
     dependency: transitive
     description:
       name: dart_webrtc
-      sha256: e65506edb452148220efab53d8d2f8bb9d827bd8bcd53cf3a3e6df70b27f3d86
+      sha256: "3bfa069a8b14a53ba506f6dd529e9b88c878ba0cc238f311051a39bf1e53d075"
       url: "https://pub.dev"
     source: hosted
-    version: "1.4.10"
+    version: "1.5.3+hotfix.5"
   dbus:
     dependency: transitive
     description:
@@ -306,10 +306,10 @@ packages:
     dependency: transitive
     description:
       name: flutter_callkit_incoming
-      sha256: c1e90252b45d84ec5b0792f77aaf3c07222ceade3698307d1a890e514690f7fc
+      sha256: f56301e138c539253a9d0ae3c620450a4bc8cc4bc7e83b001906cfa639183ea2
       url: "https://pub.dev"
     source: hosted
-    version: "2.5.0"
+    version: "2.5.7"
   flutter_lints:
     dependency: "direct dev"
     description:
@@ -369,10 +369,10 @@ packages:
     dependency: transitive
     description:
       name: internet_connection_checker_plus
-      sha256: "95da3194bdb98cb606b921f0e0007cbe55c32d6a7fa92d5debe59ef4183ce2a6"
+      sha256: "5aea4a1ee0fcca736980a7d04d96fe8c0b53dea330690053305a5c5392230112"
       url: "https://pub.dev"
     source: hosted
-    version: "2.5.2"
+    version: "2.7.2"
   intl:
     dependency: transitive
     description:
@@ -381,14 +381,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.19.0"
-  ios_platform_images:
-    dependency: transitive
-    description:
-      name: ios_platform_images
-      sha256: "5e6379dfba45e6c24d2dd625393491b7190e9ce735da5f7559d56b6752c9115c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.4+3"
   jose:
     dependency: transitive
     description:
@@ -569,26 +561,26 @@ packages:
     dependency: transitive
     description:
       name: permission_handler
-      sha256: "18bf33f7fefbd812f37e72091a15575e72d5318854877e0e4035a24ac1113ecb"
+      sha256: bc917da36261b00137bbc8896bf1482169cd76f866282368948f032c8c1caae1
       url: "https://pub.dev"
     source: hosted
-    version: "11.3.1"
+    version: "12.0.1"
   permission_handler_android:
     dependency: transitive
     description:
       name: permission_handler_android
-      sha256: "71bbecfee799e65aff7c744761a57e817e73b738fedf62ab7afd5593da21f9f1"
+      sha256: "1e3bc410ca1bf84662104b100eb126e066cb55791b7451307f9708d4007350e6"
       url: "https://pub.dev"
     source: hosted
-    version: "12.0.13"
+    version: "13.0.1"
   permission_handler_apple:
     dependency: transitive
     description:
       name: permission_handler_apple
-      sha256: e6f6d73b12438ef13e648c4ae56bd106ec60d17e90a59c4545db6781229082a0
+      sha256: f000131e755c54cf4d84a5d8bd6e4149e262cc31c5a8b1d698de1ac85fa41023
       url: "https://pub.dev"
     source: hosted
-    version: "9.4.5"
+    version: "9.4.7"
   permission_handler_html:
     dependency: transitive
     description:
@@ -601,10 +593,10 @@ packages:
     dependency: transitive
     description:
       name: permission_handler_platform_interface
-      sha256: e9c8eadee926c4532d0305dff94b85bf961f16759c3af791486613152af4b4f9
+      sha256: eb99b295153abce5d683cac8c02e22faab63e50679b937fa1bf67d58bb282878
       url: "https://pub.dev"
     source: hosted
-    version: "4.2.3"
+    version: "4.3.0"
   permission_handler_windows:
     dependency: transitive
     description:
@@ -629,14 +621,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.6"
-  platform_detect:
-    dependency: transitive
-    description:
-      name: platform_detect
-      sha256: "7394dc1d884e652785a37c3ff25c54e503c6d9fa2f35b55d5efc0a133dec122c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.5"
   plugin_platform_interface:
     dependency: transitive
     description:
@@ -657,18 +641,10 @@ packages:
     dependency: transitive
     description:
       name: protobuf
-      sha256: "68645b24e0716782e58948f8467fd42a880f255096a821f9e7d0ec625b00c84d"
+      sha256: de9c9eb2c33f8e933a42932fe1dc504800ca45ebc3d673e6ed7f39754ee4053e
       url: "https://pub.dev"
     source: hosted
-    version: "3.1.0"
-  pub_semver:
-    dependency: transitive
-    description:
-      name: pub_semver
-      sha256: "5bfcf68ca79ef689f8990d1160781b4bad40a3bd5e5218ad4076ddb7f4081585"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.2.0"
+    version: "4.2.0"
   quiver:
     dependency: transitive
     description:
@@ -822,42 +798,42 @@ packages:
     dependency: "direct main"
     description:
       name: stream_video
-      sha256: cdfe7920bd967ecc4c7700e84701f3c536cbcab405009fa244bcf75d1fb2f088
+      sha256: "552c738bbf822c79cc1e4f57c5fa9b1eb3a0d93d1dc166e9451d68223b90207f"
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.4"
+    version: "0.10.2"
   stream_video_flutter:
     dependency: "direct main"
     description:
       name: stream_video_flutter
-      sha256: "3fc75daa0958b1e93009f2c019bdf0f33c9a6d3e855e3e856c50ce286a9c0783"
+      sha256: ffc045cc5b7d9684c96ab342d64862bcf2cae00ba0cfcfd4636e2c1105bc7c55
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.4"
+    version: "0.10.2"
   stream_video_push_notification:
     dependency: "direct main"
     description:
       name: stream_video_push_notification
-      sha256: c014b881fb9a51388bf7797b46513b0a18cce8766a92a2d1012aa3de2f73da64
+      sha256: aada9886228f330a9247df2c18f30bbe1b0787ea9cd1e07518d637b585505d11
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.4"
+    version: "0.10.2"
   stream_video_screen_sharing:
     dependency: "direct main"
     description:
       name: stream_video_screen_sharing
-      sha256: "2b98cbddd183f0d25ac75dc8d22fe4eff8f694245c93f16c8a087c5991e9f7c5"
+      sha256: "8c51cb8f7bf7acc9ddf49697b38969736d923ab956a60a8b0294144d73bdb212"
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.4"
+    version: "0.10.2"
   stream_webrtc_flutter:
     dependency: transitive
     description:
       name: stream_webrtc_flutter
-      sha256: "02e305ba07a3c2c8200ca6722c5f60fc304ea21c3e15de4f51e67714bd875eb6"
+      sha256: "9002165652551d9e123bbd3d22abe6ac7e80c025a0da25cf616574698d0b1398"
       url: "https://pub.dev"
     source: hosted
-    version: "0.12.12+2"
+    version: "1.0.11"
   string_scanner:
     dependency: transitive
     description:
@@ -1006,10 +982,10 @@ packages:
     dependency: transitive
     description:
       name: webrtc_interface
-      sha256: e05f00091c9c70a15bab4ccb1b6c46d9a16a6075002f02cfac3641eccb05e25d
+      sha256: "86fe3afc81a08481dfb25cf14a5a94e27062ecef25544783f352c914e0bbc1ca"
       url: "https://pub.dev"
     source: hosted
-    version: "1.2.1+hotfix.1"
+    version: "1.2.2+hotfix.2"
   win32:
     dependency: transitive
     description:
@@ -1051,5 +1027,5 @@ packages:
     source: hosted
     version: "6.5.0"
 sdks:
-  dart: ">=3.7.0-0 <4.0.0"
+  dart: ">=3.7.0 <4.0.0"
   flutter: ">=3.27.4"
