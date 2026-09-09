@@ -1,0 +1,2 @@
+# Let a scanned /p/{propertyId} URL load the Flutter single-page application.
+/p/* /index.html 200
