@@ -41,11 +41,11 @@ class AutomaticDoorbellPage extends StatefulWidget {
 class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
   VisitorCallStatus _status = VisitorCallStatus.preparing;
   String? _error; _VisitorSession? _session; StreamVideo? _streamVideo; Call? _call;
-  html.MediaStream? _permissionStream; Timer? _poller; StreamSubscription? _callStatusSubscription;
+  html.MediaStream? _permissionStream; Timer? _poller;
   bool _cancelled = false; bool _finishing = false;
 
   @override void initState() { super.initState(); unawaited(_startAutomatically()); }
-  @override void dispose() { _poller?.cancel(); _callStatusSubscription?.cancel(); unawaited(_cancelIfNeeded()); unawaited(_disconnect()); super.dispose(); }
+  @override void dispose() { _poller?.cancel(); unawaited(_cancelIfNeeded()); unawaited(_disconnect()); super.dispose(); }
 
   Future<void> _startAutomatically() async {
     final propertyId = _propertyIdFromUrl();
@@ -108,19 +108,9 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       if (callData.isFailure) {
         throw StateError('Unable to load the doorbell call: ${callData.getErrorOrNull()}');
       }
-      final join = await _call!.join(membersLimit: 2);
-      if (join.isFailure) {
-        throw StateError('Unable to join the doorbell call: ${join.getErrorOrNull()}');
-      }
-      await _call!.setCameraEnabled(enabled: true);
-      await _call!.setMicrophoneEnabled(enabled: true);
-      // We own joining explicitly, so do not wrap this in StreamCallContainer
-      // (which would join a second time).  Continue listening for a remote
-      // hang-up and replace the call screen promptly instead of leaving the
-      // SDK's generic "Disconnected" screen visible.
-      _callStatusSubscription = _call!.partialState((state) => state.status).listen((status) {
-        if (status.isDisconnected) unawaited(_finishFromRemote(VisitorCallStatus.ended));
-      });
+      // StreamCallContainer below owns the single RTC join. Its connect
+      // options publish the visitor camera and microphone as part of that
+      // join, so participant state and the rendered tracks stay in sync.
       _setStatus(VisitorCallStatus.connected);
     } catch (error) { _fail('The homeowner answered, but video could not connect. ${_friendlyError(error)}'); }
   }
@@ -139,7 +129,6 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
     if (_finishing || _isTerminal(_status)) return;
     _finishing = true;
     _poller?.cancel();
-    _callStatusSubscription?.cancel();
     await _disconnect();
     if (mounted) _setStatus(status);
   }
@@ -151,29 +140,53 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
   String _friendlyError(Object error) => error.toString().contains('NotAllowed') ? 'Camera and microphone permission is required.' : '';
 
   @override Widget build(BuildContext context) => Scaffold(body: Container(decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient), child: SafeArea(child: _status == VisitorCallStatus.connected ? _buildCall() : _buildStatus())));
-  Widget _buildCall() => StreamCallContent(
+  Widget _buildCall() => StreamCallContainer(
     call: _call!,
-    layoutMode: ParticipantLayoutMode.spotlight,
-    // Web defaults hide the local preview on desktop layouts.  A visitor must
-    // always see their own camera preview, while the homeowner video appears
-    // whenever the homeowner selected Video in the mobile app.
-    callParticipantsWidgetBuilder: (context, call) => StreamCallParticipants(
+    callConnectOptions: CallConnectOptions(
+      camera: TrackOption.enabled(),
+      microphone: TrackOption.enabled(),
+      speakerDefaultOn: true,
+    ),
+    onCallDisconnected: (_) => unawaited(_finishFromRemote(VisitorCallStatus.ended)),
+    callContentWidgetBuilder: (context, call) => StreamCallContent(
       call: call,
       layoutMode: ParticipantLayoutMode.spotlight,
-      enableLocalVideo: true,
-    ),
-    // Visitor video/mic are mandatory for this doorbell.  The only in-call
-    // control is an explicit, signalling-aware hang-up button.
-    callControlsWidgetBuilder: (context, call) => SafeArea(
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 24),
-          child: FilledButton.icon(
-            onPressed: _endCall,
-            icon: const Icon(Icons.call_end),
-            label: const Text('End call'),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+      callAppBarWidgetBuilder: (context, call) => PreferredSize(
+        preferredSize: const Size.fromHeight(56),
+        child: Container(
+          alignment: Alignment.center,
+          color: const Color(0xFF102018),
+          child: const Text(
+            'QRinger doorbell',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+      // Web defaults can hide the local preview on desktop layouts. A visitor
+      // must always see their own camera, while homeowner video appears only
+      // when the homeowner joined with their Video preference selected.
+      callParticipantsWidgetBuilder: (context, call) => StreamCallParticipants(
+        call: call,
+        layoutMode: ParticipantLayoutMode.spotlight,
+        enableLocalVideo: true,
+      ),
+      // Visitor video/mic are mandatory. The only in-call control is the
+      // signalling-aware hang-up button.
+      callControlsWidgetBuilder: (context, call) => SafeArea(
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 24),
+            child: FilledButton.icon(
+              onPressed: _endCall,
+              icon: const Icon(Icons.call_end),
+              label: const Text('End call'),
+              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+            ),
           ),
         ),
       ),
