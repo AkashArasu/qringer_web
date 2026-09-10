@@ -10,11 +10,6 @@ const _apiBaseUrl = String.fromEnvironment(
   'QRINGER_PUBLIC_API_URL',
   defaultValue: 'https://token-server.takash-arasu.workers.dev',
 );
-const _streamApiKey = String.fromEnvironment(
-  'STREAM_API_KEY',
-  defaultValue: 'y8h5754fwgma',
-);
-
 void main() => runApp(const QringerVisitorApp());
 
 class QringerVisitorApp extends StatelessWidget {
@@ -29,12 +24,12 @@ class QringerVisitorApp extends StatelessWidget {
 enum VisitorCallStatus { preparing, requestingPermission, ringing, connecting, connected, busy, noAnswer, declined, cancelled, ended, error }
 
 class _VisitorSession {
-  const _VisitorSession({required this.callId, required this.propertyId, required this.visitorId, required this.streamToken, required this.sessionToken});
-  final String callId, propertyId, visitorId, streamToken, sessionToken;
+  const _VisitorSession({required this.callId, required this.propertyId, required this.visitorId, required this.streamToken, required this.sessionToken, required this.streamApiKey});
+  final String callId, propertyId, visitorId, streamToken, sessionToken, streamApiKey;
   factory _VisitorSession.fromJson(Map<String, dynamic> json) => _VisitorSession(
     callId: json['callId'] as String, propertyId: json['propertyId'] as String,
     visitorId: json['visitorId'] as String, streamToken: json['streamToken'] as String,
-    sessionToken: json['sessionToken'] as String,
+    sessionToken: json['sessionToken'] as String, streamApiKey: json['streamApiKey'] as String,
   );
 }
 
@@ -98,7 +93,11 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
     final session = _session; if (session == null) return;
     _setStatus(VisitorCallStatus.connecting);
     try {
-      _streamVideo = StreamVideo(_streamApiKey, user: User.regular(userId: session.visitorId, name: 'Visitor'), userToken: session.streamToken);
+      // getUserMedia above is strictly a permission prompt.  Release those
+      // temporary tracks before Stream creates the tracks it will publish.
+      for (final track in _permissionStream?.getTracks() ?? <html.MediaStreamTrack>[]) { track.stop(); }
+      _permissionStream = null;
+      _streamVideo = StreamVideo(session.streamApiKey, user: User.regular(userId: session.visitorId, name: 'Visitor'), userToken: session.streamToken);
       await _streamVideo!.connect();
       _call = _streamVideo!.makeCall(callType: StreamCallType.defaultType(), id: session.callId);
       await _call!.join();
@@ -110,12 +109,14 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
 
   Future<void> _cancelIfNeeded() async {
     final session = _session;
-    if (session == null || _status == VisitorCallStatus.connected || _isTerminal(_status)) return;
+    if (session == null || _isTerminal(_status)) return;
     _cancelled = true;
-    try { await http.post(Uri.parse('$_apiBaseUrl/v1/calls/${session.callId}/cancel'), headers: {'Content-Type': 'application/json', 'X-Property-Id': session.propertyId, 'X-Visitor-Session': session.sessionToken}); } catch (_) {}
+    final action = _status == VisitorCallStatus.connected ? 'end' : 'cancel';
+    try { await http.post(Uri.parse('$_apiBaseUrl/v1/calls/${session.callId}/$action'), headers: {'Content-Type': 'application/json', 'X-Property-Id': session.propertyId, 'X-Visitor-Session': session.sessionToken}); } catch (_) {}
   }
   Future<void> _disconnect() async { for (final track in _permissionStream?.getTracks() ?? <html.MediaStreamTrack>[]) { track.stop(); } try { await _call?.leave(); await _streamVideo?.disconnect(); } catch (_) {} }
   Future<void> _cancel() async { await _cancelIfNeeded(); await _disconnect(); if (mounted) _setStatus(VisitorCallStatus.cancelled); }
+  Future<void> _endCall() async { await _cancelIfNeeded(); await _disconnect(); if (mounted) _setStatus(VisitorCallStatus.ended); }
   void _setStatus(VisitorCallStatus value) { if (mounted) setState(() => _status = value); }
   void _fail(String message) { if (mounted) setState(() { _error = message; _status = VisitorCallStatus.error; }); }
   bool _isTerminal(VisitorCallStatus status) => {VisitorCallStatus.busy, VisitorCallStatus.noAnswer, VisitorCallStatus.declined, VisitorCallStatus.cancelled, VisitorCallStatus.ended, VisitorCallStatus.error}.contains(status);
@@ -123,7 +124,26 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
   String _friendlyError(Object error) => error.toString().contains('NotAllowed') ? 'Camera and microphone permission is required.' : '';
 
   @override Widget build(BuildContext context) => Scaffold(body: Container(decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient), child: SafeArea(child: _status == VisitorCallStatus.connected ? _buildCall() : _buildStatus())));
-  Widget _buildCall() => StreamCallContainer(call: _call!, callContentWidgetBuilder: (context, call) => StreamCallContent(call: call, layoutMode: ParticipantLayoutMode.spotlight));
+  Widget _buildCall() => StreamCallContainer(call: _call!, callContentWidgetBuilder: (context, call) => StreamCallContent(
+    call: call,
+    layoutMode: ParticipantLayoutMode.spotlight,
+    // Visitor video/mic are mandatory for this doorbell.  The only in-call
+    // control is an explicit, signalling-aware hang-up button.
+    callControlsWidgetBuilder: (context, call) => SafeArea(
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 24),
+          child: FilledButton.icon(
+            onPressed: _endCall,
+            icon: const Icon(Icons.call_end),
+            label: const Text('End call'),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+          ),
+        ),
+      ),
+    ),
+  ));
   Widget _buildStatus() {
     final details = switch (_status) {
       VisitorCallStatus.requestingPermission => ('Allow camera and microphone', 'QRinger needs both permissions to let the homeowner see and hear you.', Icons.video_call),
