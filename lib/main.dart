@@ -101,7 +101,17 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       _streamVideo = StreamVideo(session.streamApiKey, user: User.regular(userId: session.visitorId, name: 'Visitor'), userToken: session.streamToken);
       await _streamVideo!.connect();
       _call = _streamVideo!.makeCall(callType: StreamCallType.defaultType(), id: session.callId);
-      await _call!.join();
+      // The Worker created this call before the visitor joined.  Load and
+      // watch that existing call first, otherwise the browser can connect to
+      // the SFU with an empty participant snapshot and render a blank call.
+      final callData = await _call!.get(membersLimit: 2, watch: true);
+      if (callData.isFailure) {
+        throw StateError('Unable to load the doorbell call: ${callData.getErrorOrNull()}');
+      }
+      final join = await _call!.join(membersLimit: 2);
+      if (join.isFailure) {
+        throw StateError('Unable to join the doorbell call: ${join.getErrorOrNull()}');
+      }
       await _call!.setCameraEnabled(enabled: true);
       await _call!.setMicrophoneEnabled(enabled: true);
       // We own joining explicitly, so do not wrap this in StreamCallContainer
