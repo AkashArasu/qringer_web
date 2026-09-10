@@ -41,10 +41,11 @@ class AutomaticDoorbellPage extends StatefulWidget {
 class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
   VisitorCallStatus _status = VisitorCallStatus.preparing;
   String? _error; _VisitorSession? _session; StreamVideo? _streamVideo; Call? _call;
-  html.MediaStream? _permissionStream; Timer? _poller; bool _cancelled = false;
+  html.MediaStream? _permissionStream; Timer? _poller; StreamSubscription? _callStatusSubscription;
+  bool _cancelled = false; bool _finishing = false;
 
   @override void initState() { super.initState(); unawaited(_startAutomatically()); }
-  @override void dispose() { _poller?.cancel(); unawaited(_cancelIfNeeded()); unawaited(_disconnect()); super.dispose(); }
+  @override void dispose() { _poller?.cancel(); _callStatusSubscription?.cancel(); unawaited(_cancelIfNeeded()); unawaited(_disconnect()); super.dispose(); }
 
   Future<void> _startAutomatically() async {
     final propertyId = _propertyIdFromUrl();
@@ -79,11 +80,11 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       final state = (jsonDecode(response.body) as Map<String, dynamic>)['status'] as String;
       switch (state) {
         case 'accepted': await _connectMedia(); break;
-        case 'busy': _setStatus(VisitorCallStatus.busy); break;
-        case 'no_answer': _setStatus(VisitorCallStatus.noAnswer); break;
-        case 'declined': _setStatus(VisitorCallStatus.declined); break;
-        case 'cancelled': _setStatus(VisitorCallStatus.cancelled); break;
-        case 'ended': _setStatus(VisitorCallStatus.ended); break;
+        case 'busy': await _finishFromRemote(VisitorCallStatus.busy); break;
+        case 'no_answer': await _finishFromRemote(VisitorCallStatus.noAnswer); break;
+        case 'declined': await _finishFromRemote(VisitorCallStatus.declined); break;
+        case 'cancelled': await _finishFromRemote(VisitorCallStatus.cancelled); break;
+        case 'ended': await _finishFromRemote(VisitorCallStatus.ended); break;
       }
     } catch (_) { /* A transient polling failure must not end a ringing call. */ }
   }
@@ -103,7 +104,14 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       await _call!.join();
       await _call!.setCameraEnabled(enabled: true);
       await _call!.setMicrophoneEnabled(enabled: true);
-      _poller?.cancel(); _setStatus(VisitorCallStatus.connected);
+      // We own joining explicitly, so do not wrap this in StreamCallContainer
+      // (which would join a second time).  Continue listening for a remote
+      // hang-up and replace the call screen promptly instead of leaving the
+      // SDK's generic "Disconnected" screen visible.
+      _callStatusSubscription = _call!.partialState((state) => state.status).listen((status) {
+        if (status.isDisconnected) unawaited(_finishFromRemote(VisitorCallStatus.ended));
+      });
+      _setStatus(VisitorCallStatus.connected);
     } catch (error) { _fail('The homeowner answered, but video could not connect. ${_friendlyError(error)}'); }
   }
 
@@ -117,6 +125,15 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
   Future<void> _disconnect() async { for (final track in _permissionStream?.getTracks() ?? <html.MediaStreamTrack>[]) { track.stop(); } try { await _call?.leave(); await _streamVideo?.disconnect(); } catch (_) {} }
   Future<void> _cancel() async { await _cancelIfNeeded(); await _disconnect(); if (mounted) _setStatus(VisitorCallStatus.cancelled); }
   Future<void> _endCall() async { await _cancelIfNeeded(); await _disconnect(); if (mounted) _setStatus(VisitorCallStatus.ended); }
+  Future<void> _finishFromRemote(VisitorCallStatus status) async {
+    if (_finishing || _isTerminal(_status)) return;
+    _finishing = true;
+    _poller?.cancel();
+    _callStatusSubscription?.cancel();
+    await _disconnect();
+    if (mounted) _setStatus(status);
+  }
+  void _tryToCloseWindow() => html.window.close();
   void _setStatus(VisitorCallStatus value) { if (mounted) setState(() => _status = value); }
   void _fail(String message) { if (mounted) setState(() { _error = message; _status = VisitorCallStatus.error; }); }
   bool _isTerminal(VisitorCallStatus status) => {VisitorCallStatus.busy, VisitorCallStatus.noAnswer, VisitorCallStatus.declined, VisitorCallStatus.cancelled, VisitorCallStatus.ended, VisitorCallStatus.error}.contains(status);
@@ -124,9 +141,17 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
   String _friendlyError(Object error) => error.toString().contains('NotAllowed') ? 'Camera and microphone permission is required.' : '';
 
   @override Widget build(BuildContext context) => Scaffold(body: Container(decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient), child: SafeArea(child: _status == VisitorCallStatus.connected ? _buildCall() : _buildStatus())));
-  Widget _buildCall() => StreamCallContainer(call: _call!, callContentWidgetBuilder: (context, call) => StreamCallContent(
-    call: call,
+  Widget _buildCall() => StreamCallContent(
+    call: _call!,
     layoutMode: ParticipantLayoutMode.spotlight,
+    // Web defaults hide the local preview on desktop layouts.  A visitor must
+    // always see their own camera preview, while the homeowner video appears
+    // whenever the homeowner selected Video in the mobile app.
+    callParticipantsWidgetBuilder: (context, call) => StreamCallParticipants(
+      call: call,
+      layoutMode: ParticipantLayoutMode.spotlight,
+      enableLocalVideo: true,
+    ),
     // Visitor video/mic are mandatory for this doorbell.  The only in-call
     // control is an explicit, signalling-aware hang-up button.
     callControlsWidgetBuilder: (context, call) => SafeArea(
@@ -143,7 +168,7 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
         ),
       ),
     ),
-  ));
+  );
   Widget _buildStatus() {
     final details = switch (_status) {
       VisitorCallStatus.requestingPermission => ('Allow camera and microphone', 'QRinger needs both permissions to let the homeowner see and hear you.', Icons.video_call),
@@ -154,10 +179,10 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       VisitorCallStatus.noAnswer => ('No answer', 'The homeowner did not answer.', Icons.phone_missed),
       VisitorCallStatus.declined => ('Call declined', 'The homeowner is unavailable.', Icons.call_end),
       VisitorCallStatus.cancelled => ('Call cancelled', 'Your doorbell call was cancelled.', Icons.cancel),
-      VisitorCallStatus.ended => ('Call ended', 'Thank you for visiting.', Icons.call_end),
+      VisitorCallStatus.ended => ('Session ended', 'The doorbell session has ended. You can safely close this window.', Icons.check_circle_outline),
       VisitorCallStatus.error => ('Unable to call', _error ?? 'Please try again.', Icons.error_outline),
       _ => ('Preparing', '', Icons.doorbell),
     };
-    return Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(details.$3, color: Colors.white, size: 72), const SizedBox(height: 24), Text(details.$1, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold), textAlign: TextAlign.center), const SizedBox(height: 12), Text(details.$2, style: const TextStyle(color: Colors.white70, fontSize: 16), textAlign: TextAlign.center), if (_status == VisitorCallStatus.ringing || _status == VisitorCallStatus.preparing) ...[const SizedBox(height: 28), const CircularProgressIndicator(color: Colors.white)], if (_status == VisitorCallStatus.ringing) ...[const SizedBox(height: 28), OutlinedButton.icon(onPressed: _cancel, icon: const Icon(Icons.call_end), label: const Text('Cancel'), style: OutlinedButton.styleFrom(foregroundColor: Colors.white))]])));
+    return Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(details.$3, color: Colors.white, size: 72), const SizedBox(height: 24), Text(details.$1, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold), textAlign: TextAlign.center), const SizedBox(height: 12), Text(details.$2, style: const TextStyle(color: Colors.white70, fontSize: 16), textAlign: TextAlign.center), if (_status == VisitorCallStatus.ringing || _status == VisitorCallStatus.preparing) ...[const SizedBox(height: 28), const CircularProgressIndicator(color: Colors.white)], if (_status == VisitorCallStatus.ringing) ...[const SizedBox(height: 28), OutlinedButton.icon(onPressed: _cancel, icon: const Icon(Icons.call_end), label: const Text('Cancel'), style: OutlinedButton.styleFrom(foregroundColor: Colors.white))], if (_status == VisitorCallStatus.ended) ...[const SizedBox(height: 28), OutlinedButton.icon(onPressed: _tryToCloseWindow, icon: const Icon(Icons.close), label: const Text('Close window'), style: OutlinedButton.styleFrom(foregroundColor: Colors.white))]])));
   }
 }
