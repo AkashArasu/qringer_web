@@ -10,5 +10,7 @@ flutter pub get
 # Build web app
 flutter build web --release
 
-# Remove the base href line completely
-sed -i '/<base href="\/"/d' build/web/index.html
+# Preserve the root asset base so direct /p/{propertyId} QR links load Flutter
+# assets from / rather than from /p/.
+# Flutter does not copy Cloudflare's SPA rewrite file into build/web.
+cp web/_redirects build/web/_redirects
