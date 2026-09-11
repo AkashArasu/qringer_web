@@ -150,7 +150,9 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
     onCallDisconnected: (_) => unawaited(_finishFromRemote(VisitorCallStatus.ended)),
     callContentWidgetBuilder: (context, call) => StreamCallContent(
       call: call,
-      layoutMode: ParticipantLayoutMode.spotlight,
+      // Grid avoids the spotlight layout's unconstrained Expanded column on
+      // desktop browsers and reliably gives every participant a sized tile.
+      layoutMode: ParticipantLayoutMode.grid,
       callAppBarWidgetBuilder: (context, call) => PreferredSize(
         preferredSize: const Size.fromHeight(56),
         child: Container(
@@ -171,7 +173,7 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       // when the homeowner joined with their Video preference selected.
       callParticipantsWidgetBuilder: (context, call) => StreamCallParticipants(
         call: call,
-        layoutMode: ParticipantLayoutMode.spotlight,
+        layoutMode: ParticipantLayoutMode.grid,
         enableLocalVideo: true,
       ),
       // Visitor video/mic are mandatory. The only in-call control is the
