@@ -167,11 +167,15 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
           ),
         ),
       ),
-      // StreamCallContent hosts custom participant content in a loose Stack.
-      // Force a finite surface so web RTC video elements cannot collapse to
-      // zero width/height when only one participant is currently available.
-      callParticipantsWidgetBuilder: (context, call) => SizedBox.expand(
-        child: _buildParticipants(call),
+      // Let the SDK subscribe to participant/track changes. Its participant
+      // widget listens to partial call-state updates directly; the earlier
+      // page-level StreamBuilder could remain on an old empty snapshot after
+      // the RTC connection completed on web.
+      callParticipantsWidgetBuilder: (context, call) => StreamCallParticipants(
+        call: call,
+        layoutMode: ParticipantLayoutMode.grid,
+        callParticipantBuilder: (context, activeCall, participant) =>
+            _participantTile(activeCall, participant),
       ),
       // Visitor video/mic are mandatory. The only in-call control is the
       // signalling-aware hang-up button.
