@@ -8,7 +8,11 @@ flutter config --enable-web
 flutter pub get
 
 # Build web app
-flutter build web --release
+# The current Stream WebRTC dependency defaults to copying HTML video frames
+# into Flutter textures. Some Chromium/CanvasKit combinations produce a blank
+# texture even though the underlying MediaStream is live. Render the stream as
+# a native HTML <video> platform view instead.
+flutter build web --release --dart-define=WEBRTC_USE_HTML_ELEMENT_VIEW=true
 
 # Preserve the root asset base so direct /p/{propertyId} QR links load Flutter
 # assets from / rather than from /p/.

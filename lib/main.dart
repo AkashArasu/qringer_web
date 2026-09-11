@@ -265,6 +265,10 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
 
   Widget _participantTile(Call call, CallParticipantState participant) {
     final displayName = participant.isLocal ? 'You' : participant.name;
+    if (!participant.isVideoEnabled) {
+      return _audioOnlyParticipant(displayName);
+    }
+
     return ColoredBox(
       color: const Color(0xFF17201C),
       child: Stack(
@@ -315,4 +319,38 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       ),
     );
   }
+
+  Widget _audioOnlyParticipant(String displayName) => ColoredBox(
+    color: const Color(0xFF17201C),
+    child: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 104,
+            height: 104,
+            decoration: const BoxDecoration(
+              color: Color(0xFF355C4A),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.person, size: 64, color: Colors.white),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            displayName,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Audio call',
+            style: TextStyle(color: Colors.white60, fontSize: 15),
+          ),
+        ],
+      ),
+    ),
+  );
 }
