@@ -167,7 +167,12 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
           ),
         ),
       ),
-      callParticipantsWidgetBuilder: (context, call) => _buildParticipants(call),
+      // StreamCallContent hosts custom participant content in a loose Stack.
+      // Force a finite surface so web RTC video elements cannot collapse to
+      // zero width/height when only one participant is currently available.
+      callParticipantsWidgetBuilder: (context, call) => SizedBox.expand(
+        child: _buildParticipants(call),
+      ),
       // Visitor video/mic are mandatory. The only in-call control is the
       // signalling-aware hang-up button.
       callControlsWidgetBuilder: (context, call) => SafeArea(
@@ -229,7 +234,7 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       }
 
       if (remote == null) {
-        return StreamCallParticipant(call: call, participant: local!);
+        return SizedBox.expand(child: _participantTile(call, local!));
       }
 
       return LayoutBuilder(
@@ -238,7 +243,7 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
           return Stack(
             children: [
               Positioned.fill(
-                child: StreamCallParticipant(call: call, participant: remote),
+                child: _participantTile(call, remote),
               ),
               if (local != null)
                 Positioned(
@@ -248,7 +253,7 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
                   height: previewWidth * 9 / 16,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(14),
-                    child: StreamCallParticipant(call: call, participant: local),
+                    child: _participantTile(call, local),
                   ),
                 ),
             ],
@@ -257,4 +262,57 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       );
     },
   );
+
+  Widget _participantTile(Call call, CallParticipantState participant) {
+    final displayName = participant.isLocal ? 'You' : participant.name;
+    return ColoredBox(
+      color: const Color(0xFF17201C),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          StreamVideoRenderer(
+            key: ValueKey('${participant.uniqueParticipantKey}-qringer-video'),
+            call: call,
+            participant: participant,
+            videoTrackType: SfuTrackType.video,
+            videoFit: VideoFit.cover,
+            placeholderBuilder: (context) => Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    participant.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
+                    color: Colors.white70,
+                    size: 52,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    participant.isVideoEnabled
+                        ? 'Waiting for $displayName video…'
+                        : '$displayName joined with audio only',
+                    style: const TextStyle(color: Colors.white70),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            bottom: 10,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: Text(displayName, style: const TextStyle(color: Colors.white)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
