@@ -10,6 +10,12 @@ const _apiBaseUrl = String.fromEnvironment(
   'QRINGER_PUBLIC_API_URL',
   defaultValue: 'https://token-server.takash-arasu.workers.dev',
 );
+
+void _videoLog(String event, [Map<String, Object?> details = const {}]) {
+  final message = '[QRINGER_VIDEO] $event ${jsonEncode(details)}';
+  html.window.console.log(message);
+}
+
 void main() => runApp(const QringerVisitorApp());
 
 class QringerVisitorApp extends StatelessWidget {
@@ -147,54 +153,13 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       speakerDefaultOn: true,
     ),
     onCallDisconnected: (_) => unawaited(_finishFromRemote(VisitorCallStatus.ended)),
-    callContentWidgetBuilder: (context, call) => StreamCallContent(
+    // Do not add a second CallStatus gate here. Signalling has already told
+    // this page that the homeowner accepted, and StreamCallContainer owns the
+    // RTC join. The previous nested StreamCallContent could remain in its
+    // non-connected body on web and never insert participant video widgets.
+    callContentWidgetBuilder: (context, call) => _VisitorCallSurface(
       call: call,
-      // Grid avoids the spotlight layout's unconstrained Expanded column on
-      // desktop browsers and reliably gives every participant a sized tile.
-      layoutMode: ParticipantLayoutMode.grid,
-      callAppBarWidgetBuilder: (context, call) => PreferredSize(
-        preferredSize: const Size.fromHeight(56),
-        child: Container(
-          alignment: Alignment.center,
-          color: const Color(0xFF102018),
-          child: const Text(
-            'QRinger doorbell',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ),
-      // Let the SDK subscribe to participant/track changes. Its participant
-      // widget listens to partial call-state updates directly; the earlier
-      // page-level StreamBuilder could remain on an old empty snapshot after
-      // the RTC connection completed on web.
-      callParticipantsWidgetBuilder: (context, call) => StreamCallParticipants(
-        call: call,
-        layoutMode: ParticipantLayoutMode.grid,
-        // QRinger always publishes and displays the visitor camera. Stream's
-        // desktop default may place or suppress the local preview depending
-        // on layout, so make the requirement explicit.
-        enableLocalVideo: true,
-      ),
-      // Visitor video/mic are mandatory. The only in-call control is the
-      // signalling-aware hang-up button.
-      callControlsWidgetBuilder: (context, call) => SafeArea(
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: FilledButton.icon(
-              onPressed: _endCall,
-              icon: const Icon(Icons.call_end),
-              label: const Text('End call'),
-              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
-            ),
-          ),
-        ),
-      ),
+      onEnd: _endCall,
     ),
   );
   Widget _buildStatus() {
@@ -214,4 +179,236 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
     return Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(details.$3, color: Colors.white, size: 72), const SizedBox(height: 24), Text(details.$1, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold), textAlign: TextAlign.center), const SizedBox(height: 12), Text(details.$2, style: const TextStyle(color: Colors.white70, fontSize: 16), textAlign: TextAlign.center), if (_status == VisitorCallStatus.ringing || _status == VisitorCallStatus.preparing) ...[const SizedBox(height: 28), const CircularProgressIndicator(color: Colors.white)], if (_status == VisitorCallStatus.ringing) ...[const SizedBox(height: 28), OutlinedButton.icon(onPressed: _cancel, icon: const Icon(Icons.call_end), label: const Text('Cancel'), style: OutlinedButton.styleFrom(foregroundColor: Colors.white))]])));
   }
 
+}
+
+class _VisitorCallSurface extends StatefulWidget {
+  const _VisitorCallSurface({required this.call, required this.onEnd});
+
+  final Call call;
+  final Future<void> Function() onEnd;
+
+  @override
+  State<_VisitorCallSurface> createState() => _VisitorCallSurfaceState();
+}
+
+class _VisitorCallSurfaceState extends State<_VisitorCallSurface> {
+  late CallState _callState;
+  StreamSubscription<CallState>? _stateSubscription;
+  Timer? _statePoller;
+  String _lastSignature = '';
+  int _buildCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _callState = widget.call.state.value;
+    _lastSignature = _signature(_callState);
+    _logState('surface_mounted', _callState);
+    _subscribe(widget.call);
+  }
+
+  @override
+  void didUpdateWidget(covariant _VisitorCallSurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.call != widget.call) {
+      _stateSubscription?.cancel();
+      _statePoller?.cancel();
+      _callState = widget.call.state.value;
+      _lastSignature = _signature(_callState);
+      _logState('call_widget_changed', _callState);
+      _subscribe(widget.call);
+    }
+  }
+
+  void _subscribe(Call call) {
+    _videoLog('call_state_listener_subscribed');
+    _stateSubscription = call.state.listen((state) {
+      _logState('call_state_event', state);
+      _lastSignature = _signature(state);
+      if (mounted) setState(() => _callState = state);
+    });
+
+    // This also makes the UI resilient if a browser/SDK combination mutates
+    // the ValueStream value without delivering a distinct listener event.
+    _statePoller = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      final current = call.state.value;
+      final signature = _signature(current);
+      if (signature == _lastSignature) return;
+      _lastSignature = signature;
+      _logState('call_state_poll_change', current);
+      if (mounted) setState(() => _callState = current);
+    });
+  }
+
+  String _signature(CallState state) => [
+        state.status.runtimeType,
+        for (final participant in state.callParticipants)
+          '${participant.uniqueParticipantKey}:${participant.publishedTracks.keys.join(',')}:${participant.isVideoEnabled}',
+      ].join('|');
+
+  void _logState(String event, CallState state) {
+    final participants = state.callParticipants;
+    final local = participants.where((participant) => participant.isLocal).firstOrNull;
+    final remotes = participants.where((participant) => !participant.isLocal).toList();
+    final localVideoTracks = local == null ||
+            !local.publishedTracks.containsKey(SfuTrackType.video)
+        ? 0
+        : 1;
+    final remoteVideoTracks = remotes
+        .where((participant) =>
+            participant.publishedTracks.containsKey(SfuTrackType.video))
+        .length;
+
+    _videoLog(event, {
+      'callStatus': state.status.runtimeType.toString(),
+      'participantCount': participants.length,
+      'localParticipantExists': local != null,
+      'remoteParticipantExists': remotes.isNotEmpty,
+      'localVideoTrackCount': localVideoTracks,
+      'remoteVideoTrackCount': remoteVideoTracks,
+      'participants': [
+        for (final participant in participants)
+          {
+            'local': participant.isLocal,
+            'videoEnabled': participant.isVideoEnabled,
+            'publishedTracks': participant.publishedTracks.keys
+                .map((track) => track.toString())
+                .toList(),
+            'videoTrackMountedInCall': widget.call.getTrack(
+                  participant.trackIdPrefix,
+                  SfuTrackType.video,
+                ) !=
+                null,
+          },
+      ],
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _buildCount += 1;
+    final participants = _callState.callParticipants;
+    final local = participants.where((participant) => participant.isLocal).firstOrNull;
+    final remote = participants.where((participant) => !participant.isLocal).firstOrNull;
+
+    _videoLog('surface_rebuild', {
+      'buildCount': _buildCount,
+      'callStatus': _callState.status.runtimeType.toString(),
+      'participantCount': participants.length,
+      'localParticipantExists': local != null,
+      'remoteParticipantExists': remote != null,
+    });
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF25292F),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        centerTitle: true,
+        backgroundColor: const Color(0xFF102018),
+        title: const Text('QRinger doorbell'),
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: _buildParticipants(local: local, remote: remote),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 24,
+            child: SafeArea(
+              child: Center(
+                child: FilledButton.icon(
+                  onPressed: () => unawaited(widget.onEnd()),
+                  icon: const Icon(Icons.call_end),
+                  label: const Text('End call'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildParticipants({
+    required CallParticipantState? local,
+    required CallParticipantState? remote,
+  }) {
+    _videoLog('participant_detection_executed', {
+      'localParticipantExists': local != null,
+      'remoteParticipantExists': remote != null,
+    });
+
+    if (local == null && remote == null) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Colors.white),
+            SizedBox(height: 16),
+            Text(
+              'Waiting for call participants…',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (remote == null) {
+      return _participantWidget(local!, 'local');
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final previewWidth = (constraints.maxWidth * 0.28).clamp(120.0, 280.0);
+        return Stack(
+          children: [
+            Positioned.fill(child: _participantWidget(remote, 'remote')),
+            if (local != null)
+              Positioned(
+                right: 16,
+                bottom: 88,
+                width: previewWidth,
+                height: previewWidth * 9 / 16,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: _participantWidget(local, 'local'),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _participantWidget(
+    CallParticipantState participant,
+    String role,
+  ) {
+    _videoLog('participant_widget_inserted', {
+      'role': role,
+      'videoEnabled': participant.isVideoEnabled,
+      'publishedTracks':
+          participant.publishedTracks.keys.map((track) => track.toString()).toList(),
+    });
+    return StreamCallParticipant(
+      key: ValueKey('${participant.uniqueParticipantKey}-$role'),
+      call: widget.call,
+      participant: participant,
+    );
+  }
+
+  @override
+  void dispose() {
+    _videoLog('surface_disposed', {'buildCount': _buildCount});
+    _stateSubscription?.cancel();
+    _statePoller?.cancel();
+    super.dispose();
+  }
 }
