@@ -132,7 +132,6 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
     await _disconnect();
     if (mounted) _setStatus(status);
   }
-  void _tryToCloseWindow() => html.window.close();
   void _setStatus(VisitorCallStatus value) { if (mounted) setState(() => _status = value); }
   void _fail(String message) { if (mounted) setState(() { _error = message; _status = VisitorCallStatus.error; }); }
   bool _isTerminal(VisitorCallStatus status) => {VisitorCallStatus.busy, VisitorCallStatus.noAnswer, VisitorCallStatus.declined, VisitorCallStatus.cancelled, VisitorCallStatus.ended, VisitorCallStatus.error}.contains(status);
@@ -168,14 +167,7 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
           ),
         ),
       ),
-      // Web defaults can hide the local preview on desktop layouts. A visitor
-      // must always see their own camera, while homeowner video appears only
-      // when the homeowner joined with their Video preference selected.
-      callParticipantsWidgetBuilder: (context, call) => StreamCallParticipants(
-        call: call,
-        layoutMode: ParticipantLayoutMode.grid,
-        enableLocalVideo: true,
-      ),
+      callParticipantsWidgetBuilder: (context, call) => _buildParticipants(call),
       // Visitor video/mic are mandatory. The only in-call control is the
       // signalling-aware hang-up button.
       callControlsWidgetBuilder: (context, call) => SafeArea(
@@ -208,6 +200,61 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       VisitorCallStatus.error => ('Unable to call', _error ?? 'Please try again.', Icons.error_outline),
       _ => ('Preparing', '', Icons.doorbell),
     };
-    return Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(details.$3, color: Colors.white, size: 72), const SizedBox(height: 24), Text(details.$1, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold), textAlign: TextAlign.center), const SizedBox(height: 12), Text(details.$2, style: const TextStyle(color: Colors.white70, fontSize: 16), textAlign: TextAlign.center), if (_status == VisitorCallStatus.ringing || _status == VisitorCallStatus.preparing) ...[const SizedBox(height: 28), const CircularProgressIndicator(color: Colors.white)], if (_status == VisitorCallStatus.ringing) ...[const SizedBox(height: 28), OutlinedButton.icon(onPressed: _cancel, icon: const Icon(Icons.call_end), label: const Text('Cancel'), style: OutlinedButton.styleFrom(foregroundColor: Colors.white))], if (_status == VisitorCallStatus.ended) ...[const SizedBox(height: 28), OutlinedButton.icon(onPressed: _tryToCloseWindow, icon: const Icon(Icons.close), label: const Text('Close window'), style: OutlinedButton.styleFrom(foregroundColor: Colors.white))]])));
+    return Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(details.$3, color: Colors.white, size: 72), const SizedBox(height: 24), Text(details.$1, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold), textAlign: TextAlign.center), const SizedBox(height: 12), Text(details.$2, style: const TextStyle(color: Colors.white70, fontSize: 16), textAlign: TextAlign.center), if (_status == VisitorCallStatus.ringing || _status == VisitorCallStatus.preparing) ...[const SizedBox(height: 28), const CircularProgressIndicator(color: Colors.white)], if (_status == VisitorCallStatus.ringing) ...[const SizedBox(height: 28), OutlinedButton.icon(onPressed: _cancel, icon: const Icon(Icons.call_end), label: const Text('Cancel'), style: OutlinedButton.styleFrom(foregroundColor: Colors.white))]])));
   }
+
+  /// Render the two-party doorbell directly. The generic participant layout
+  /// can suppress local video on desktop and has produced empty web layouts.
+  /// Here the visitor is always visible, while homeowner video naturally
+  /// becomes an avatar when the homeowner joined in audio-only mode.
+  Widget _buildParticipants(Call call) => StreamBuilder<CallState>(
+    stream: call.state.valueStream,
+    initialData: call.state.value,
+    builder: (context, snapshot) {
+      final participants = snapshot.data?.callParticipants ?? const <CallParticipantState>[];
+      final local = participants.where((participant) => participant.isLocal).firstOrNull;
+      final remote = participants.where((participant) => !participant.isLocal).firstOrNull;
+
+      if (local == null && remote == null) {
+        return const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Colors.white),
+              SizedBox(height: 16),
+              Text('Connecting camera…', style: TextStyle(color: Colors.white70)),
+            ],
+          ),
+        );
+      }
+
+      if (remote == null) {
+        return StreamCallParticipant(call: call, participant: local!);
+      }
+
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final previewWidth = (constraints.maxWidth * 0.28).clamp(120.0, 280.0);
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: StreamCallParticipant(call: call, participant: remote),
+              ),
+              if (local != null)
+                Positioned(
+                  right: 16,
+                  bottom: 16,
+                  width: previewWidth,
+                  height: previewWidth * 9 / 16,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: StreamCallParticipant(call: call, participant: local),
+                  ),
+                ),
+            ],
+          );
+        },
+      );
+    },
+  );
 }
