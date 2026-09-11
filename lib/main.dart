@@ -274,6 +274,10 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       child: Stack(
         fit: StackFit.expand,
         children: [
+          // Keep a useful surface visible while Stream/WebRTC subscribes to
+          // the track. The renderer replaces this as soon as a frame arrives;
+          // without it an unavailable track appears as an empty dark panel.
+          _videoWaitingParticipant(displayName),
           StreamVideoRenderer(
             key: ValueKey('${participant.uniqueParticipantKey}-qringer-video'),
             call: call,
@@ -319,6 +323,29 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       ),
     );
   }
+
+  Widget _videoWaitingParticipant(String displayName) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 104,
+          height: 104,
+          decoration: const BoxDecoration(
+            color: Color(0xFF355C4A),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.person, size: 64, color: Colors.white),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          'Waiting for $displayName video…',
+          style: const TextStyle(color: Colors.white70),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    ),
+  );
 
   Widget _audioOnlyParticipant(String displayName) => ColoredBox(
     color: const Color(0xFF17201C),
