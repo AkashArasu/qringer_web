@@ -22,7 +22,7 @@ class QringerVisitorApp extends StatelessWidget {
   const QringerVisitorApp({super.key});
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'QRinger', debugShowCheckedModeBanner: false, theme: AppTheme.theme,
+        title: 'QROnly', debugShowCheckedModeBanner: false, theme: AppTheme.theme,
         home: const AutomaticDoorbellPage(),
       );
 }
@@ -164,7 +164,7 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
   );
   Widget _buildStatus() {
     final details = switch (_status) {
-      VisitorCallStatus.requestingPermission => ('Allow camera and microphone', 'QRinger needs both permissions to let the homeowner see and hear you.', Icons.video_call),
+      VisitorCallStatus.requestingPermission => ('Allow camera and microphone', 'QROnly needs both permissions to let the homeowner see and hear you.', Icons.video_call),
       VisitorCallStatus.preparing => ('Starting doorbell', 'Connecting securely…', Icons.doorbell),
       VisitorCallStatus.ringing => ('Ringing homeowner', 'Please wait while they answer.', Icons.notifications_active),
       VisitorCallStatus.connecting => ('Connecting video', 'The homeowner answered.', Icons.videocam),
@@ -305,7 +305,7 @@ class _VisitorCallSurfaceState extends State<_VisitorCallSurface> {
         automaticallyImplyLeading: false,
         centerTitle: true,
         backgroundColor: const Color(0xFF102018),
-        title: const Text('QRinger doorbell'),
+        title: const Text('QROnly doorbell'),
       ),
       body: Stack(
         children: [
