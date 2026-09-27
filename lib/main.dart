@@ -83,8 +83,15 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
   Call? _call;
   html.MediaStream? _permissionStream;
   Timer? _poller;
+  Timer? _socketReconnectTimer;
+  html.WebSocket? _signalingSocket;
   StreamSubscription<html.Event>? _pageHideSubscription;
   bool _cancelled = false;
+  bool _acceptedByHomeowner = false;
+  bool _serverTerminal = false;
+  bool _transitionSent = false;
+  bool _signalingStopped = false;
+  int _socketFailures = 0;
   bool _finishing = false;
   bool _polling = false;
   late final String _requestId;
@@ -103,7 +110,7 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
   @override
   void dispose() {
     _pageHideSubscription?.cancel();
-    _poller?.cancel();
+    _stopLiveSignaling();
     unawaited(_cancelIfNeeded());
     unawaited(_disconnect());
     super.dispose();
@@ -118,19 +125,33 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       _setStatus(VisitorCallStatus.requestingPermission);
       _permissionStream = await html.window.navigator.mediaDevices!
           .getUserMedia({'video': true, 'audio': true});
-      if (_cancelled) return;
+      if (_cancelled) {
+        await _disconnect();
+        return;
+      }
       _setStatus(VisitorCallStatus.preparing);
       final response = await _createVisitorSession(propertyId);
-      if (response.statusCode == 409) return _setStatus(VisitorCallStatus.busy);
+      if (response.statusCode == 409) {
+        await _disconnect();
+        return _setStatus(VisitorCallStatus.busy);
+      }
+      if (response.statusCode == 429) {
+        throw StateError('Too many doorbell calls. Please try again shortly.');
+      }
       if (response.statusCode != 200) throw Exception(_errorFrom(response));
       _session = _VisitorSession.fromJson(
           jsonDecode(response.body) as Map<String, dynamic>);
+      if (_cancelled || !mounted) {
+        await _cancelIfNeeded();
+        await _disconnect();
+        return;
+      }
       _setStatus(VisitorCallStatus.ringing);
-      _poller = Timer.periodic(
-          const Duration(seconds: 1), (_) => unawaited(_pollCallState()));
+      _setPollingInterval(const Duration(seconds: 2));
+      _openSignaling();
       await _pollCallState();
     } catch (error) {
-      _fail('Unable to start the doorbell call. ${_friendlyError(error)}');
+      await _fail('Unable to start the doorbell call. ${_friendlyError(error)}');
     }
   }
 
@@ -178,10 +199,96 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
             'X-Visitor-Session': session.sessionToken
           }).timeout(const Duration(seconds: 5));
       if (response.statusCode != 200) return;
-      final state = (jsonDecode(response.body)
-          as Map<String, dynamic>)['status'] as String;
-      switch (state) {
+      await _handleCallState((jsonDecode(response.body)
+          as Map<String, dynamic>)['status'] as String);
+    } catch (_) {
+      /* A transient polling failure must not end a ringing call. */
+    } finally {
+      _polling = false;
+    }
+  }
+
+  void _openSignaling() {
+    final session = _session;
+    if (session == null ||
+        _signalingStopped ||
+        _cancelled ||
+        _serverTerminal ||
+        _signalingSocket != null) {
+      return;
+    }
+    try {
+      final base = Uri.parse(_apiBaseUrl);
+      final uri = base.replace(
+        scheme: base.scheme == 'https' ? 'wss' : 'ws',
+        path: '/v1/calls/${session.callId}/events',
+        queryParameters: {'propertyId': session.propertyId},
+      );
+      // Browser WebSockets cannot set arbitrary headers. Keep the session
+      // secret out of the URL by passing it as a handshake subprotocol.
+      final socket = html.WebSocket(uri.toString(),
+          ['qronly.v1', 'session.${session.sessionToken}']);
+      _signalingSocket = socket;
+      socket.onOpen.listen((_) {
+        if (_signalingSocket != socket) return;
+        _socketFailures = 0;
+        // A low-rate safety snapshot covers a socket that stays open but
+        // misses a state event; normal state changes arrive over WebSocket.
+        _setPollingInterval(const Duration(seconds: 10));
+      });
+      socket.onMessage.listen((event) {
+        try {
+          final message = jsonDecode(event.data as String) as Map<String, dynamic>;
+          unawaited(_handleCallState(message['status'] as String));
+        } catch (error) {
+          _videoLog('invalid_signaling_event', {'error': '$error'});
+        }
+      });
+      socket.onError.listen((_) => _signalingDisconnected(socket));
+      socket.onClose.listen((_) => _signalingDisconnected(socket));
+    } catch (_) {
+      _signalingDisconnected(null);
+    }
+  }
+
+  void _signalingDisconnected(html.WebSocket? socket) {
+    if (socket != null && _signalingSocket != socket) return;
+    _signalingSocket = null;
+    socket?.close();
+    if (_signalingStopped ||
+        _cancelled ||
+        _serverTerminal ||
+        _isTerminal(_status)) {
+      return;
+    }
+    _setPollingInterval(const Duration(seconds: 2));
+    unawaited(_pollCallState());
+    _socketFailures++;
+    final seconds = min(30, 1 << min(5, _socketFailures));
+    _socketReconnectTimer?.cancel();
+    _socketReconnectTimer = Timer(Duration(seconds: seconds), _openSignaling);
+  }
+
+  void _stopLiveSignaling() {
+    _signalingStopped = true;
+    _poller?.cancel();
+    _poller = null;
+    _socketReconnectTimer?.cancel();
+    _socketReconnectTimer = null;
+    _signalingSocket?.close();
+    _signalingSocket = null;
+  }
+
+  void _setPollingInterval(Duration interval) {
+    _poller?.cancel();
+    _poller = Timer.periodic(interval, (_) => unawaited(_pollCallState()));
+  }
+
+  Future<void> _handleCallState(String state) async {
+    if (_serverTerminal || _cancelled) return;
+    switch (state) {
         case 'accepted':
+          _acceptedByHomeowner = true;
           await _connectMedia();
           break;
         case 'busy':
@@ -199,11 +306,6 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
         case 'ended':
           await _finishFromRemote(VisitorCallStatus.ended);
           break;
-      }
-    } catch (_) {
-      /* A transient polling failure must not end a ringing call. */
-    } finally {
-      _polling = false;
     }
   }
 
@@ -230,6 +332,10 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       if (connection.isFailure) {
         throw StateError('Unable to connect to the video service');
       }
+      if (_cancelled) {
+        await _disconnect();
+        return;
+      }
       _call = _streamVideo!
           .makeCall(callType: StreamCallType.defaultType(), id: session.callId);
       // The Worker created this call before the visitor joined.  Load and
@@ -240,37 +346,52 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
         throw StateError(
             'Unable to load the doorbell call: ${callData.getErrorOrNull()}');
       }
+      if (_cancelled) {
+        await _disconnect();
+        return;
+      }
       // StreamCallContainer below owns the single RTC join. Its connect
       // options publish the visitor camera and microphone as part of that
       // join, so participant state and the rendered tracks stay in sync.
       _setStatus(VisitorCallStatus.connected);
     } catch (error) {
-      _fail(
+      await _fail(
           'The homeowner answered, but video could not connect. ${_friendlyError(error)}');
     }
   }
 
   Future<void> _cancelIfNeeded() async {
-    final session = _session;
-    if (session == null || _isTerminal(_status)) return;
     _cancelled = true;
-    final action = _status == VisitorCallStatus.connected ? 'end' : 'cancel';
+    final session = _session;
+    if (session == null) {
+      _sendPendingAbandon();
+      return;
+    }
+    if (_serverTerminal || _transitionSent) return;
+    _transitionSent = true;
+    final action = _acceptedByHomeowner ? 'end' : 'cancel';
     try {
-      await http.post(
+      final response = await http.post(
           Uri.parse('$_apiBaseUrl/v1/calls/${session.callId}/$action'),
           headers: {
             'Content-Type': 'application/json',
             'X-Property-Id': session.propertyId,
             'X-Visitor-Session': session.sessionToken
-          });
-    } catch (_) {}
+          }).timeout(const Duration(seconds: 5));
+      if (response.statusCode >= 500) _transitionSent = false;
+    } catch (_) { _transitionSent = false; }
   }
 
   void _sendUnloadSignal() {
     final session = _session;
-    if (session == null || _cancelled || _isTerminal(_status)) return;
     _cancelled = true;
-    final action = _status == VisitorCallStatus.connected ? 'end' : 'cancel';
+    _stopLiveSignaling();
+    if (session == null) {
+      _sendPendingAbandon();
+      return;
+    }
+    if (_serverTerminal) return;
+    final action = _acceptedByHomeowner ? 'end' : 'cancel';
     final body = jsonEncode({
       'propertyId': session.propertyId,
       'sessionToken': session.sessionToken,
@@ -280,6 +401,15 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
       body,
     );
     _videoLog('pagehide_signal_queued', {'action': action, 'queued': queued});
+  }
+
+  void _sendPendingAbandon() {
+    final propertyId = _propertyIdFromUrl();
+    if (propertyId == null) return;
+    html.window.navigator.sendBeacon(
+      '$_apiBaseUrl/v1/visitor-sessions/abandon',
+      jsonEncode({'propertyId': propertyId, 'requestId': _requestId}),
+    );
   }
 
   Future<void> _disconnect() async {
@@ -294,12 +424,14 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
   }
 
   Future<void> _cancel() async {
+    _stopLiveSignaling();
     await _cancelIfNeeded();
     await _disconnect();
     if (mounted) _setStatus(VisitorCallStatus.cancelled);
   }
 
   Future<void> _endCall() async {
+    _stopLiveSignaling();
     await _cancelIfNeeded();
     await _disconnect();
     if (mounted) _setStatus(VisitorCallStatus.ended);
@@ -308,7 +440,8 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
   Future<void> _finishFromRemote(VisitorCallStatus status) async {
     if (_finishing || _isTerminal(_status)) return;
     _finishing = true;
-    _poller?.cancel();
+    _serverTerminal = true;
+    _stopLiveSignaling();
     await _disconnect();
     if (mounted) _setStatus(status);
   }
@@ -317,13 +450,16 @@ class _AutomaticDoorbellPageState extends State<AutomaticDoorbellPage> {
     if (mounted) setState(() => _status = value);
   }
 
-  void _fail(String message) {
+  Future<void> _fail(String message) async {
+    _stopLiveSignaling();
     if (mounted) {
       setState(() {
         _error = message;
         _status = VisitorCallStatus.error;
       });
     }
+    await _cancelIfNeeded();
+    await _disconnect();
   }
 
   bool _isTerminal(VisitorCallStatus status) => {
